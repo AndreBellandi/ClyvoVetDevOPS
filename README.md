@@ -54,6 +54,17 @@ Docker
         Volume Persistente
            oracle_data
 
+## Instalação da Solução (How To)
+
+1. Provisionar a VM Linux Ubuntu na Microsoft Azure.
+2. Abrir as portas 22, 8080 e 1521.
+3. Instalar Docker e Docker Compose.
+4. Clonar o repositório da aplicação.
+5. Realizar o build da imagem Docker.
+6. Executar os containers da API e do Oracle XE.
+7. Validar os containers utilizando `docker ps`.
+8. Acessar a documentação Swagger da API.
+
 ##  Scripts
 
 # 1. CRIAR RESOURCE GROUP
