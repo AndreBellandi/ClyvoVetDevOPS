@@ -77,7 +77,11 @@ az vm open-port --resource-group rg-sprint --name vm-sprint --port 22 --priority
 # port 1521
 az vm open-port --resource-group rg-sprint --name vm-sprint --port 1521 --priority 130
 
-# 4. INSTALAR DOCKER + FERRAMENTAS NA VM
+# 4. ENTRANDO NA VM
+</>bash
+ssh adminfiap@SEU_IP_PUBLICO
+
+# 5. INSTALAR DOCKER + FERRAMENTAS NA VM
 </>bash
 
 #Atualizar pacotes
@@ -89,14 +93,14 @@ sudo apt install docker-compose -y
 #instalar imagem do docker
 sudo docker pull gvenzl/oracle-xe
  
-# 5. CRIAR REDE E VOLUME DOCKER
+# 6. CRIAR REDE E VOLUME DOCKER
 </>bash
 
 docker network create clyvo-network
 docker volume create oracle_data
 sudo usermod -aG docker $USER && newgrp docker
  
-# 6. CONTAINER ORACLE
+# 7. CONTAINER ORACLE
  </>bash
 
 # container oracle
@@ -107,9 +111,9 @@ docker ps
  
 docker logs -f oracle-db
  
-# ============================================
-# 7. CONTAINER DOTNET
-# ============================================
+# 8. CONTAINER DOTNET
+ </>bash
+
 #Clonar o repositório
 git clone https://github.com/gabriel-g-dev/ClyvoVetApi.git
  
