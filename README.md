@@ -56,29 +56,30 @@ Docker
 
 ##  Scripts
 
-# ============================================
 # 1. CRIAR RESOURCE GROUP
-# ============================================
- 
+</>bash
+
 az group create --name rg-sprint --location brazilsouth
-# ============================================
+
 # 2. PROVISIONAR A VM LINUX
-# ============================================
+</>bash
  
 az vm create --resource-group rg-sprint --name vm-sprint --image Ubuntu2204 --size Standard_E2s_v3 --admin-username adminfiap --admin-password SuaSenha@Forte123 --authentication-type password
-# ============================================
+
 # 3. ABRIR AS PORTAS NECESSÁRIAS
-# ============================================
+</>bash
+
 # port 8080
 az vm open-port --resource-group rg-sprint --name vm-sprint --port 8080 --priority 120
-#port 22
+# port 22
 az vm open-port --resource-group rg-sprint --name vm-sprint --port 22 --priority 100
  
 # port 1521
 az vm open-port --resource-group rg-sprint --name vm-sprint --port 1521 --priority 130
-# ============================================
+
 # 4. INSTALAR DOCKER + FERRAMENTAS NA VM
-# ============================================
+</>bash
+
 #Atualizar pacotes
 sudo apt update && sudo apt upgrade -y
 #instalar o docker
@@ -88,17 +89,16 @@ sudo apt install docker-compose -y
 #instalar imagem do docker
 sudo docker pull gvenzl/oracle-xe
  
-# ============================================
 # 5. CRIAR REDE E VOLUME DOCKER
-# ============================================
+</>bash
 
 docker network create clyvo-network
 docker volume create oracle_data
 sudo usermod -aG docker $USER && newgrp docker
  
-# ============================================
 # 6. CONTAINER ORACLE
-# ============================================
+ </>bash
+
 # container oracle
 docker run -d --name oracle-db -p 1521:1521 -e ORACLE_PASSWORD=<SENHA_ORACLE> -v oracle_data:/opt/oracle/oradata gvenzl/oracle-xe
  
