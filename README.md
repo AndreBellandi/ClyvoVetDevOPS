@@ -43,7 +43,6 @@ Azure (Brazil South)
 Resource Group: rg-sprint
    ↓
 VM Linux Ubuntu 22.04
-IP Público: 191.239.253.180
    ↓
 Docker
  ├── Container App
@@ -54,3 +53,78 @@ Docker
               ↓
         Volume Persistente
            oracle_data
+
+##  Scripts
+
+# ============================================
+# 1. CRIAR RESOURCE GROUP
+# ============================================
+ 
+az group create --name rg-sprint --location brazilsouth
+# ============================================
+# 2. PROVISIONAR A VM LINUX
+# ============================================
+ 
+az vm create --resource-group rg-sprint --name vm-sprint --image Ubuntu2204 --size Standard_E2s_v3 --admin-username adminfiap --admin-password SuaSenha@Forte123 --authentication-type password
+# ============================================
+# 3. ABRIR AS PORTAS NECESSÁRIAS
+# ============================================
+# port 8080
+az vm open-port --resource-group rg-sprint --name vm-sprint --port 8080 --priority 120
+#port 22
+az vm open-port --resource-group rg-sprint --name vm-sprint --port 22 --priority 100
+ 
+# port 1521
+az vm open-port --resource-group rg-sprint --name vm-sprint --port 1521 --priority 130
+# ============================================
+# 4. INSTALAR DOCKER + FERRAMENTAS NA VM
+# ============================================
+#Atualizar pacotes
+sudo apt update && sudo apt upgrade -y
+#instalar o docker
+sudo apt install docker.io -y
+#instalar o docker compose
+sudo apt install docker-compose -y
+#instalar imagem do docker
+sudo docker pull gvenzl/oracle-xe
+ 
+# ============================================
+# 5. CRIAR REDE E VOLUME DOCKER
+# ============================================
+
+docker network create clyvo-network
+docker volume create oracle_data
+sudo usermod -aG docker $USER && newgrp docker
+ 
+# ============================================
+# 6. CONTAINER ORACLE
+# ============================================
+# container oracle
+docker run -d --name oracle-db -p 1521:1521 -e ORACLE_PASSWORD=<SENHA_ORACLE> -v oracle_data:/opt/oracle/oradata gvenzl/oracle-xe
+ 
+# testes
+docker ps
+ 
+docker logs -f oracle-db
+ 
+# ============================================
+# 7. CONTAINER DOTNET
+# ============================================
+#Clonar o repositório
+git clone https://github.com/gabriel-g-dev/ClyvoVetApi.git
+ 
+#Entrar na pasta
+cd ClyvoVetApi/
+ 
+#instalação
+docker build -t clyvovet-api .
+ 
+#rodar container
+docker run -d --name clyvovet-api \
+  --network clyvo-network --user 1000:1000 -p 8080:8080 clyvovet-api
+ 
+#testes
+docker ps
+ 
+#no navegador
+http://IP_DA_VM:8080/swagger
