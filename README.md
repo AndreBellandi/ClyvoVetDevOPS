@@ -18,3 +18,14 @@ A aplicação foi desenvolvida utilizando ASP.NET Core e Oracle Database, com de
 - Facilidade de deploy em ambiente cloud utilizando Azure
 
 ---
+
+## Tecnologias Utilizadas
+
+- ASP.NET Core (.NET 10)
+- Oracle XE
+- Docker
+- Docker Compose
+- Microsoft Azure
+- Ubuntu Server 22.04
+
+---
