@@ -8,3 +8,13 @@ A aplicação foi desenvolvida utilizando ASP.NET Core e Oracle Database, com de
 
 ---
 
+## Benefícios para o Negócio
+
+- Centralização das informações veterinárias
+- Melhor organização das consultas e atendimentos
+- Facilidade no gerenciamento de dados dos pets
+- Escalabilidade da aplicação utilizando containers Docker
+- Persistência e segurança dos dados utilizando Oracle Database
+- Facilidade de deploy em ambiente cloud utilizando Azure
+
+---
