@@ -100,6 +100,7 @@ az vm open-port --resource-group rg-sprint --name vm-sprint --port 1521 --priori
 
 # mostra o ip
 az vm show --resource-group rg-sprint --name vm-sprint -d --query publicIps -o tsv
+23.97.96.150
 
 # Entra na vm
 ssh adminfiap@SEU_IP_PUBLICO
@@ -156,7 +157,7 @@ docker run -d --name clyvovet-api --network clyvo-network -p 8080:8080 clyvovet-
 docker ps
  
 #no navegador
-http://IP_DA_VM:8080/swagger
+http://IP_DA_VM:8080/scalar
 
 # 9. EXCLUIR O RESOURCE GROUP
 #para sair da vm
