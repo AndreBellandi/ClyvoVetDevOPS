@@ -80,6 +80,9 @@ az group create --name rg-sprint --location brazilsouth
  
 az vm create --resource-group rg-sprint --name vm-sprint --image Ubuntu2204 --size Standard_E2s_v3 --admin-username adminfiap --admin-password SuaSenha@Forte123 --authentication-type password
 
+# EXEMPLO DE SENHA
+SuaSenha@Forte123
+
 # 3. ABRIR AS PORTAS NECESSÁRIAS
 </>bash
 
@@ -128,7 +131,7 @@ docker volume create oracle_data
  </>bash
 
 docker run -d --name oracle-db -p 1521:1521 -e ORACLE_PASSWORD=<SENHA_ORACLE> -v oracle_data:/opt/oracle/oradata gvenzl/oracle-xe
- 
+
 # testes
 docker ps
  
@@ -160,3 +163,7 @@ http://IP_DA_VM:8080/swagger
 exit
 
 az group delete --name rg-sprint --yes --no-wait
+
+# verificação
+
+az group exists --name rg-sprint
