@@ -247,6 +247,38 @@ az group delete --name rg-sprint --yes --no-wait
 
 ---
 
+---
+
+## 🐳 Dockerfile
+
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copia o .csproj e restaura dependências (otimiza cache do Docker)
+COPY ["ClyvoVetApi.csproj", "./"]
+RUN dotnet restore "ClyvoVetApi.csproj"
+
+# Copia os arquivos restantes e faz o build
+COPY . .
+RUN dotnet build "ClyvoVetApi.csproj" -c Release -o /app/build
+RUN dotnet publish "ClyvoVetApi.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Usa a imagem segura do ASP.NET
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# Porta HTTP não privilegiada
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+# Execução com usuário não-root (DevOps Compliance ✅)
+USER app
+
+ENTRYPOINT ["dotnet", "ClyvoVetApi.dll"]
+```
+
 ## Instalação da Solução (How To)
 
 1. Provisionar a VM Linux Ubuntu na Microsoft Azure.
