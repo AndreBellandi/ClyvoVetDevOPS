@@ -105,39 +105,55 @@ az webapp create \
 
 ## 6. Banco de dados em nuvem (PaaS)
 
-Bancos aceitos: **Azure SQL (PaaS)**, **MySQL**, **PostgreSQL**, ou **Oracle da FIAP**. Não é permitido H2 nem qualquer banco containerizado nesta opção.
+### 6.1 Obter as credenciais de acesso
 
-Exemplo com **Azure SQL**:
+O Oracle da FIAP é acessado com o usuário e senha da sua RM, no seguinte endereço padrão:
 
-```bash
-az sql server create \
-  --name sql-clyvovet \
-  --resource-group rg-clyvovet \
-  --location brazilsouth \
-  --admin-user clyvoadmin \
-  --admin-password "<SENHA_SEGURA>"
-
-az sql db create \
-  --resource-group rg-clyvovet \
-  --server sql-clyvovet \
-  --name clyvovetdb \
-  --service-objective Basic
-
-az sql server firewall-rule create \
-  --resource-group rg-clyvovet \
-  --server sql-clyvovet \
-  --name AllowAzureServices \
-  --start-ip-address 0.0.0.0 \
-  --end-ip-address 0.0.0.0
+```
+Host:    oracle.fiap.com.br
+Porta:   1521
+Serviço: ORCL
+Usuário: RM<seu RM>          # ex: RM564662
+Senha:   <sua senha do Oracle FIAP>
 ```
 
-Aplicar o `script_bd.sql` (DDL + inserts) no banco criado:
+Defina como variáveis de ambiente para não repetir/trocar em cada comando:
 
 ```bash
-sqlcmd -S sql-clyvovet.database.windows.net -U clyvoadmin -P "<SENHA_SEGURA>" -d clyvovetdb -i script_bd.sql
+export RM_FIAP="RM564662"
+export SENHA_FIAP="<sua_senha>"
+export HOST_FIAP="oracle.fiap.com.br"
+export PORTA_FIAP="1521"
+export SERVICO_FIAP="ORCL"
 ```
 
-> Se optar por Oracle da FIAP, use a connection string fornecida pela instituição em vez de criar um servidor Oracle próprio.
+> Não precisa criar Resource Group, servidor nem instância — o banco já existe e está disponível 24/7 pela instituição.
+
+### 6.2 Testar a conexão
+
+```bash
+sqlplus $RM_FIAP/$SENHA_FIAP@$HOST_FIAP:$PORTA_FIAP/$SERVICO_FIAP
+```
+
+### 6.3 Aplicar o script_bd.sql (DDL + inserts)
+
+```bash
+sqlplus $RM_FIAP/$SENHA_FIAP@$HOST_FIAP:$PORTA_FIAP/$SERVICO_FIAP @script_bd.sql
+```
+
+O `script_bd.sql` na raiz do repositório deve conter:
+- `CREATE TABLE` de todas as tabelas do CORE da aplicação (ex.: `PET`, `CONSULTA`, `TUTOR`), com colunas, chaves primárias e comentários.
+- `INSERT INTO` com pelo menos 2 linhas de conteúdo significativo por tabela usada no CRUD.
+- Nada de tabelas genéricas de apoio (cidade, estado, usuário/acesso) como base da avaliação.
+
+### 6.4 Connection string para a API .NET
+
+No `appsettings.json` (sem credenciais reais commitadas) ou via variável de ambiente no App Service:
+
+```
+Data Source=$HOST_FIAP:$PORTA_FIAP/$SERVICO_FIAP;User Id=$RM_FIAP;Password=$SENHA_FIAP;
+```
+
 
 ## 7. Deploy da aplicação no App Service
 
