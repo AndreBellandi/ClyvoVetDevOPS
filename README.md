@@ -1,395 +1,227 @@
-# PetSense
+# ClyvoVetDevOPS — Opção 2: Serviço de Aplicativo (App Service)
 
-## Descrição do Projeto
+README com o **passo a passo (how-to)** para a entrega da disciplina **DevOps Tools & Cloud Computing** usando a **Opção 2: Serviço de Aplicativo (App Service)** — API **.NET** publicada em Azure App Service, com banco de dados **também na nuvem**, porém **nada containerizado** (nem app, nem banco).
 
-A Petsense é uma solução desenvolvida para auxiliar a Clyvo Vet no gerenciamento de informações relacionadas aos pets, consultas e acompanhamento veterinário.
-
-A aplicação foi desenvolvida utilizando ASP.NET Core e Oracle Database, com deploy em uma máquina virtual Linux na Microsoft Azure utilizando Docker.
-
----
-
-## Benefícios para o Negócio
-
-- Centralização das informações veterinárias
-- Melhor organização das consultas e atendimentos
-- Facilidade no gerenciamento de dados dos pets
-- Escalabilidade da aplicação utilizando containers Docker
-- Persistência e segurança dos dados utilizando Oracle Database
-- Facilidade de deploy em ambiente cloud utilizando Azure
+> Repositório do projeto: [AndreBellandi/ClyvoVetDevOPS](https://github.com/AndreBellandi/ClyvoVetDevOPS)
+> Ajuste nomes de recursos, região, credenciais e caminhos conforme o ambiente real antes de executar os comandos.
 
 ---
 
-## Tecnologias Utilizadas
+## Índice
 
-- ASP.NET Core (.NET 10)
-- Oracle XE
-- Docker
-- Docker Compose
-- Microsoft Azure
-- Ubuntu Server 22.04
+1. [Descrição da solução](#1-descrição-da-solução)
+2. [Benefícios para o negócio](#2-benefícios-para-o-negócio)
+3. [Arquitetura da solução](#3-arquitetura-da-solução)
+4. [Pré-requisitos](#4-pré-requisitos)
+5. [Criação dos recursos via Azure CLI](#5-criação-dos-recursos-via-azure-cli)
+6. [Banco de dados em nuvem (PaaS)](#6-banco-de-dados-em-nuvem-paas)
+7. [Deploy da aplicação no App Service](#7-deploy-da-aplicação-no-app-service)
+8. [CRUD e evidências de persistência](#8-crud-e-evidências-de-persistência)
+9. [Entrega (PDF e vídeo)](#9-entrega-pdf-e-vídeo)
+10. [Checklist final (penalidades a evitar)](#10-checklist-final-penalidades-a-evitar)
 
 ---
 
-## Desenho Macro da Arquitetura
+## 1. Descrição da solução
 
-A aplicação foi implantada na Microsoft Azure utilizando uma máquina virtual Linux Ubuntu 22.04 com Docker para orquestração dos containers da API e do banco de dados Oracle.
+A **CLYVO VET** é uma aplicação para clínicas veterinárias que permite gerenciar o cuidado contínuo do pet: cadastro de tutores e pets, histórico clínico, consultas e serviços. O backend é uma API **ASP.NET Core**, publicada em um **Azure App Service**, conectada a um banco de dados relacional **PaaS** na nuvem.
 
-Usuário
-   ↓
-Internet
-   ↓
-Azure (Brazil South)
-   ↓
-Resource Group: rg-sprint
-   ↓
-VM Linux Ubuntu 22.04
-   ↓
-Docker
- ├── Container App
- │     └── Porta 8080
- │
- └── Container DB (Oracle XE)
-       └── Porta 1521
-              ↓
-        Volume Persistente
-           oracle_data
+## 2. Benefícios para o negócio
 
-## Rotas da API e Documentação
----
+**Atendimento preventivo em vez de reativo.** O score de saúde e a varredura de vacinas pendentes permitem que a clínica identifique animais em risco antes da queixa clínica, transformando consulta de emergência em acompanhamento programado.
 
-### 🗑️ Excluir Resource Group (obrigatório ao final)
+**Histórico unificado.** Cada atendimento passa a compor um prontuário contínuo. O veterinário recebe consultas anteriores, vacinas aplicadas e medicações prescritas em uma requisição, sem depender da memória do tutor.
+
+**Redução de faltas e de vacinas vencidas.** A rotina de alertas identifica vencimentos, viabilizando contato ativo com o tutor — receita recorrente que hoje se perde por esquecimento.
+
+**Base para integração.** Sendo REST com contrato OpenAPI, o mesmo backend atende aplicativo do tutor, sistema da clínica e futuros parceiros sem reescrita.
+
+**Operação observável.** Health checks, log estruturado com correlação e métricas de latência e erro permitem detectar degradação antes que o usuário reclame, requisito para operar em nuvem com SLA.
+
+## 3. Arquitetura da solução
+
+```
+┌────────────┐        HTTPS        ┌──────────────────────────┐        SQL        ┌───────────────────────────┐
+│  Usuário   │ ─────────────────▶  │  Azure App Service         │ ────────────────▶ │  Banco PaaS (Azure SQL /    │
+│ (Tutor/Vet)│                     │  (clyvovet-api)             │                    │  PostgreSQL / MySQL / Oracle)│
+└────────────┘                     └──────────────────────────┘                    └───────────────────────────┘
+        ▲                                    │
+        │                                    ▼
+        │                          ┌──────────────────────────┐
+        └───────────────────────── │   App Service Plan          │
+             deploy via CLI/Git    │   (compute do App Service)  │
+                                    └──────────────────────────┘
+```
+
+- **Persona Desenvolvedor**: publica o código da API diretamente no App Service (sem build de imagem Docker).
+- **Persona Usuário final**: consome a API publicada, que se conecta ao banco PaaS.
+- **Fluxo**: `az webapp up` / deploy via zip → App Service inicia a aplicação → API conecta ao banco PaaS via connection string.
+
+> Desenhe este diagrama em uma ferramenta simples (draw.io, Excalidraw) — **não** use notação de Fluxo/TOGAF/UML, pois não será aceito.
+
+## 4. Pré-requisitos
+
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) instalada e autenticada (`az login`)
+- .NET SDK instalado localmente para build/publish
+- Conta ativa no Azure (assinatura com permissão para criar recursos)
+- **Nenhum Docker é necessário nesta opção** — nada pode ser containerizado
 
 ```bash
-# Sair da VM
-exit
-
-# Deletar todos os recursos
-az group delete --name rg-sprint --yes --no-wait
-```
-
----
-
-## 📡 Rotas da API
-
-> Base URL: `http://SEU_IP_PUBLICO:8080`
-> Documentação interativa: `/scalar/v1`
-
----
-
-### 👤 Tutores — `/api/tutores`
-> Tabela Oracle: `DONOS`
-
-| Método | Rota | Descrição | Status |
-|--------|------|-----------|--------|
-| `GET` | `/api/tutores?page=1&pageSize=10` | Lista todos os tutores com paginação | `200` |
-| `GET` | `/api/tutores/{id}` | Busca tutor por ID com lista de pets | `200` `404` |
-| `GET` | `/api/tutores/email/{email}` | Busca tutor por e-mail | `200` `404` |
-| `GET` | `/api/tutores/{id}/pets` | Lista os pets do tutor | `200` `404` |
-| `POST` | `/api/tutores` | Cadastra novo tutor | `201` `400` |
-| `PUT` | `/api/tutores/{id}` | Atualiza dados do tutor | `200` `400` `404` |
-| `DELETE` | `/api/tutores/{id}` | Remove tutor | `204` `404` |
-
-<details>
-<summary>📄 Body POST/PUT</summary>
-
-```json
-{
-  "nome": "João Silva",
-  "email": "joao@email.com",
-  "telefone": "11999999999"
-}
-```
-</details>
-
----
-
-### 🐾 Pets — `/api/pets`
-> Tabela Oracle: `PETS`
-
-| Método | Rota | Descrição | Status |
-|--------|------|-----------|--------|
-| `GET` | `/api/pets?page=1&pageSize=10` | Lista todos os pets com paginação | `200` |
-| `GET` | `/api/pets/{id}` | Detalha pet com tutor, vacinas e consultas | `200` `404` |
-| `GET` | `/api/pets/especie/{especie}` | Filtra pets por espécie | `200` |
-| `GET` | `/api/pets/raca/{raca}` | Filtra pets por raça | `200` |
-| `GET` | `/api/pets/{id}/vacinas` | Histórico de vacinas do pet | `200` `404` |
-| `GET` | `/api/pets/{id}/consultas` | Histórico de consultas do pet | `200` `404` |
-| `GET` | `/api/pets/{id}/inteligencia-preventiva` | Score de saúde preventiva (0–100) e alertas | `200` `404` |
-| `POST` | `/api/pets` | Cadastra novo pet | `201` `400` |
-| `PUT` | `/api/pets/{id}` | Atualiza dados do pet | `200` `400` `404` |
-| `DELETE` | `/api/pets/{id}` | Remove pet | `204` `404` |
-
-<details>
-<summary>📄 Body POST/PUT</summary>
-
-```json
-{
-  "nome": "Rex",
-  "especie": "Cachorro",
-  "raca": "Labrador",
-  "dataNascimento": "2020-01-15",
-  "peso": 25.50,
-  "tutorId": 1
-}
-```
-</details>
-
----
-
-### 🩺 Consultas — `/api/consultas`
-> Tabela Oracle: `CONSULTAS` — Status: `A` = Agendada | `C` = Cancelada | `R` = Realizada
-
-| Método | Rota | Descrição | Status |
-|--------|------|-----------|--------|
-| `GET` | `/api/consultas?page=1&pageSize=10` | Lista todas as consultas com paginação | `200` |
-| `GET` | `/api/consultas/{id}` | Busca consulta por ID | `200` `404` |
-| `GET` | `/api/consultas/status/{status}` | Filtra por status: `A`, `C` ou `R` | `200` |
-| `GET` | `/api/consultas/periodo?inicio=&fim=` | Filtra por intervalo de datas | `200` `400` |
-| `POST` | `/api/consultas` | Registra nova consulta | `201` `400` |
-| `PUT` | `/api/consultas/{id}` | Atualiza consulta | `200` `400` `404` |
-| `DELETE` | `/api/consultas/{id}` | Remove consulta | `204` `404` |
-
-<details>
-<summary>📄 Body POST/PUT</summary>
-
-```json
-{
-  "data": "2026-06-10T14:00:00",
-  "tipo": "Consulta de Rotina",
-  "descricao": "Checkup anual completo",
-  "valor": 150.00,
-  "status": "A",
-  "petId": 1,
-  "funcionarioId": 1
-}
-```
-</details>
-
----
-
-### 💉 Vacinas — `/api/vacinas`
-> Tabela Oracle: `VACINAS` — Status: `P` = Pendente | `A` = Aplicada
-
-| Método | Rota | Descrição | Status |
-|--------|------|-----------|--------|
-| `GET` | `/api/vacinas?page=1&pageSize=10` | Lista todas as vacinas com paginação | `200` |
-| `GET` | `/api/vacinas/{id}` | Busca vacina por ID | `200` `404` |
-| `GET` | `/api/vacinas/pendentes` | Lista vacinas com status `P` | `200` |
-| `GET` | `/api/vacinas/nome/{nome}` | Filtra vacinas por nome | `200` |
-| `GET` | `/api/vacinas/proximas?dias=30` | Lista vacinas agendadas para os próximos dias | `200` `400` |
-| `POST` | `/api/vacinas` | Registra nova vacina | `201` `400` |
-| `PUT` | `/api/vacinas/{id}` | Atualiza vacina | `200` `400` `404` |
-| `DELETE` | `/api/vacinas/{id}` | Remove vacina | `204` `404` |
-
-<details>
-<summary>📄 Body POST/PUT</summary>
-
-```json
-{
-  "nome": "Antirrábica",
-  "dataAplicacao": "2026-06-01",
-  "status": "A",
-  "petId": 1
-}
-```
-</details>
-
----
-
-### 👷 Funcionários — `/api/funcionarios`
-> Tabela Oracle: `FUNCIONARIOS`
-
-| Método | Rota | Descrição | Status |
-|--------|------|-----------|--------|
-| `GET` | `/api/funcionarios` | Lista todos os funcionários | `200` |
-| `GET` | `/api/funcionarios/{id}` | Busca funcionário por ID | `200` `404` |
-| `GET` | `/api/funcionarios/setor/{setor}` | Filtra por setor | `200` |
-| `POST` | `/api/funcionarios` | Cadastra novo funcionário | `201` `400` |
-| `PUT` | `/api/funcionarios/{id}` | Atualiza funcionário | `200` `404` |
-| `DELETE` | `/api/funcionarios/{id}` | Remove funcionário | `204` `404` |
-
-<details>
-<summary>📄 Body POST/PUT</summary>
-
-```json
-{
-  "nome": "Dra. Ana Souza",
-  "setor": "Clínica Geral",
-  "cargo": "Veterinária",
-  "email": "ana@clyvovet.com",
-  "telefone": "11988888888"
-}
-```
-</details>
-
----
-
-### 💊 Medicamentos — `/api/medicamentos`
-> Tabela Oracle: `MEDICAMENTOS`
-
-| Método | Rota | Descrição | Status |
-|--------|------|-----------|--------|
-| `GET` | `/api/medicamentos` | Lista todos os medicamentos | `200` |
-| `GET` | `/api/medicamentos/{id}` | Busca medicamento por ID | `200` `404` |
-| `POST` | `/api/medicamentos` | Cadastra novo medicamento | `201` `400` |
-| `PUT` | `/api/medicamentos/{id}` | Atualiza medicamento | `200` `404` |
-| `DELETE` | `/api/medicamentos/{id}` | Remove medicamento | `204` `404` |
-
-<details>
-<summary>📄 Body POST/PUT</summary>
-
-```json
-{
-  "nome": "Amoxicilina"
-}
-```
-</details>
-
----
-
----
-
-## 🐳 Dockerfile
-
-```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
-WORKDIR /src
-
-# Copia o .csproj e restaura dependências (otimiza cache do Docker)
-COPY ["ClyvoVetApi.csproj", "./"]
-RUN dotnet restore "ClyvoVetApi.csproj"
-
-# Copia os arquivos restantes e faz o build
-COPY . .
-RUN dotnet build "ClyvoVetApi.csproj" -c Release -o /app/build
-RUN dotnet publish "ClyvoVetApi.csproj" -c Release -o /app/publish /p:UseAppHost=false
-
-# Usa a imagem segura do ASP.NET
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
-WORKDIR /app
-COPY --from=build /app/publish .
-
-# Porta HTTP não privilegiada
-ENV ASPNETCORE_URLS=http://+:8080
-EXPOSE 8080
-
-# Execução com usuário não-root (DevOps Compliance ✅)
-USER app
-
-ENTRYPOINT ["dotnet", "ClyvoVetApi.dll"]
-```
-
-## Instalação da Solução (How To)
-
-1. Provisionar a VM Linux Ubuntu na Microsoft Azure.
-2. Abrir as portas 22, 8080 e 1521.
-3. Instalar Docker e Docker Compose.
-4. Clonar o repositório da aplicação.
-5. Realizar o build da imagem Docker.
-6. Executar os containers da API e do Oracle XE.
-7. Validar os containers utilizando `docker ps`.
-8. Acessar a documentação Swagger da API.
-
-##  Scripts
-
-# LOGIN (SE PRECISAR)
 az login
+az account set --subscription "<NOME_OU_ID_DA_ASSINATURA>"
+```
 
-# 1. CRIAR RESOURCE GROUP
-</>bash
+## 5. Criação dos recursos via Azure CLI
 
-az group create --name rg-sprint --location brazilsouth
+Todos os recursos (App e Banco de Dados) devem ser criados via **Azure CLI** — não pelo Portal manualmente.
 
-# 2. PROVISIONAR A VM LINUX
-</>bash
- 
-az vm create --resource-group rg-sprint --name vm-sprint --image Ubuntu2204 --size Standard_E2s_v3 --admin-username adminfiap --admin-password SuaSenha@Forte123 --authentication-type password
+### 5.1 Resource Group
 
-# EXEMPLO DE SENHA
-SuaSenha@Forte123
+```bash
+az group create \
+  --name rg-clyvovet \
+  --location brazilsouth
+```
 
-# 3. ABRIR AS PORTAS NECESSÁRIAS
-</>bash
+### 5.2 App Service Plan
 
-# port 8080
-az vm open-port --resource-group rg-sprint --name vm-sprint --port 8080 --priority 120
+```bash
+az appservice plan create \
+  --name plan-clyvovet \
+  --resource-group rg-clyvovet \
+  --sku B1 \
+  --is-linux
+```
 
-# port 22 (caso não tenha)
-az vm open-port --resource-group rg-sprint --name vm-sprint --port 22 --priority 100
- 
-# port 1521
-az vm open-port --resource-group rg-sprint --name vm-sprint --port 1521 --priority 130
+### 5.3 Web App (App Service)
 
-# 4. ENTRANDO NA VM
-</>bash
+```bash
+az webapp create \
+  --name clyvovet-api \
+  --resource-group rg-clyvovet \
+  --plan plan-clyvovet \
+  --runtime "DOTNETCORE:8.0"
+```
 
-# mostra o ip
-az vm show --resource-group rg-sprint --name vm-sprint -d --query publicIps -o tsv
-20.206.88.59
+## 6. Banco de dados em nuvem (PaaS)
 
-# Entra na vm
-ssh adminfiap@SEU_IP_PUBLICO
+Bancos aceitos: **Azure SQL (PaaS)**, **MySQL**, **PostgreSQL**, ou **Oracle da FIAP**. Não é permitido H2 nem qualquer banco containerizado nesta opção.
 
-# 5. INSTALAR DOCKER + FERRAMENTAS NA VM
-</>bash
+Exemplo com **Azure SQL**:
 
-#Atualizar pacotes
-sudo apt update && sudo apt upgrade -y
+```bash
+az sql server create \
+  --name sql-clyvovet \
+  --resource-group rg-clyvovet \
+  --location brazilsouth \
+  --admin-user clyvoadmin \
+  --admin-password "<SENHA_SEGURA>"
 
-#instalar o docker
-sudo apt install docker.io -y
+az sql db create \
+  --resource-group rg-clyvovet \
+  --server sql-clyvovet \
+  --name clyvovetdb \
+  --service-objective Basic
 
-#instalar o docker compose
-sudo apt install docker-compose -y
+az sql server firewall-rule create \
+  --resource-group rg-clyvovet \
+  --server sql-clyvovet \
+  --name AllowAzureServices \
+  --start-ip-address 0.0.0.0 \
+  --end-ip-address 0.0.0.0
+```
 
-#instalar imagem do docker
-sudo docker pull gvenzl/oracle-xe
- 
-# 6. CRIAR REDE E VOLUME DOCKER
-</>bash
-# Tirar o sudo (reinicie a vm se precisar)
-sudo usermod -aG docker $USER && newgrp docker
+Aplicar o `script_bd.sql` (DDL + inserts) no banco criado:
 
-docker network create clyvo-network
-docker volume create oracle_data
- 
-# 7. CONTAINER ORACLE
- </>bash
+```bash
+sqlcmd -S sql-clyvovet.database.windows.net -U clyvoadmin -P "<SENHA_SEGURA>" -d clyvovetdb -i script_bd.sql
+```
 
-docker run -d --name oracle-db -p 1521:1521 -e ORACLE_PASSWORD=<SENHA_ORACLE> -v oracle_data:/opt/oracle/oradata gvenzl/oracle-xe
+> Se optar por Oracle da FIAP, use a connection string fornecida pela instituição em vez de criar um servidor Oracle próprio.
 
-# testes
-docker ps
- 
-docker logs -f oracle-db
- 
-# 8. CONTAINER DOTNET
- </>bash
+## 7. Deploy da aplicação no App Service
 
-#Clonar o repositório
-git clone https://github.com/gabriel-g-dev/ClyvoVetApi.git
- 
-#Entrar na pasta
-cd ClyvoVetApi/
- 
-#instalação
-docker build -t clyvovet-api .
- 
-#rodar container
-docker run -d --name clyvovet-api --network clyvo-network -p 8080:8080 clyvovet-api
- 
-#testes
-docker ps
- 
-#no navegador
-http://IP_DA_VM:8080/scalar
+### 7.1 Configurar a connection string (variável protegida)
 
-# 9. EXCLUIR O RESOURCE GROUP
-#para sair da vm
-exit
+```bash
+az webapp config appsettings set \
+  --name clyvovet-api \
+  --resource-group rg-clyvovet \
+  --settings ConnectionStrings__Default="<CONNECTION_STRING_SEGURA>"
+```
 
-az group delete --name rg-sprint --yes --no-wait
+> Nunca deixe usuário/senha/token no `appsettings.json` versionado — sempre via `az webapp config appsettings` ou Azure Key Vault.
 
-# verificação
+### 7.2 Publish e deploy via zip
 
-az group exists --name rg-sprint
+```bash
+dotnet publish -c Release -o ./publish
+
+cd publish
+zip -r ../clyvovet-api.zip .
+cd ..
+
+az webapp deploy \
+  --name clyvovet-api \
+  --resource-group rg-clyvovet \
+  --src-path clyvovet-api.zip \
+  --type zip
+```
+
+### 7.3 Validar o deploy
+
+```bash
+az webapp show --name clyvovet-api --resource-group rg-clyvovet --query "defaultHostName" -o tsv
+az webapp log tail --name clyvovet-api --resource-group rg-clyvovet
+```
+
+Acesse `https://clyvovet-api.azurewebsites.net` (ou `/swagger`) para validar que a API está de pé.
+
+## 8. CRUD e evidências de persistência
+
+O CRUD deve cobrir pelo menos **duas tabelas relacionadas entre si**, do CORE da aplicação (nada de cidade/estado/usuário genérico), com pelo menos 2 linhas significativas cada. Evidência sempre via `SELECT` direto no banco:
+
+| Operação | Endpoint (exemplo) | Evidência exigida |
+|---|---|---|
+| Create | `POST /api/pets` | `SELECT * FROM PET WHERE ID = ...` após o insert |
+| Read | `GET /api/pets/{id}` | Consulta retornando os dados persistidos |
+| Update | `PUT /api/pets/{id}` | `SELECT` mostrando o valor alterado |
+| Delete | `DELETE /api/pets/{id}` | `SELECT` mostrando a ausência do registro |
+
+## 9. Entrega (PDF e vídeo)
+
+**PDF de entrega deve conter apenas:**
+- Nome completo e RM de todos os integrantes
+- Link do repositório no GitHub
+- Link do vídeo no YouTube
+- Nada além disso — todo o resto (README, scripts) fica no GitHub.
+
+**Vídeo demonstrativo (mínimo 720p, áudio claro, explicação por voz, sem legendas):**
+1. Mostrar a criação dos recursos na Azure (App Service Plan, Web App, banco PaaS).
+2. Clone do repositório no GitHub → obrigatório começar assim os testes da solução.
+3. Deploy da aplicação seguindo exatamente os passos deste README.
+4. Criação, configuração e testes do App e do Banco de Dados na nuvem, seguindo o README.
+5. Demonstração individual de cada operação do CRUD **diretamente no banco por `SELECT`**: inserção, atualização, exclusão e consulta, evidenciando a integração total entre App e Banco.
+6. Sem cortes no vídeo durante a evidência do CRUD.
+
+## 10. Checklist final (penalidades a evitar)
+
+- [ ] Nada rodando em `localhost` — tudo publicado na nuvem (senão: zero de nota)
+- [ ] Entrega dentro da data/horário definidos (senão: zero de nota)
+- [ ] Professor com acesso ao repositório e ao vídeo (senão: zero de nota)
+- [ ] Descrição da solução e do benefício para o negócio no README (-10 pontos cada, se ausente)
+- [ ] README com instruções de deploy/teste (How To) (-30 pontos se ausente)
+- [ ] Evidência clara de cada operação CRUD no banco (-30 pontos se ausente)
+- [ ] Vídeo com boa qualidade e explicação falada (-30 pontos se não)
+- [ ] Código-fonte publicado no GitHub (-40 pontos se ausente)
+- [ ] PDF com nome completo, RM e links (-30 pontos se ausente)
+- [ ] `script_bd.sql` com DDL incluído (-10 pontos se ausente)
+- [ ] Pelo menos 2 linhas significativas inseridas nas tabelas usadas (-20 pontos se não)
+- [ ] CRUD em pelo menos duas tabelas (-20 pontos se usar só uma)
+- [ ] Tabelas do CORE da solução, não genéricas (-30 pontos se não)
+- [ ] **Não misturar as opções de entrega** — nada pode estar containerizado nesta opção (-40 pontos se o App estiver containerizado, -40 pontos se o Banco estiver containerizado)
+- [ ] Sem dados sensíveis expostos no código-fonte (-20 pontos se houver)
+- [ ] Diagrama de arquitetura sem estilo Fluxo/TOGAF/UML (-20 pontos se usar)
+- [ ] Banco permitido (Azure SQL PaaS, MySQL, PostgreSQL, Oracle da FIAP — nunca H2) (-40 pontos se não)
+- [ ] Recursos (App e Banco) criados via Azure CLI (-30 pontos se não)
+- [ ] Scripts de recursos entregues no README (grupo de recurso, plano do serviço, serviço de aplicativo, banco de dados, configurações) (-10 pontos por script faltando)
