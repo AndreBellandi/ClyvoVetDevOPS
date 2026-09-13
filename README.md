@@ -80,7 +80,7 @@ Todos os recursos (App e Banco de Dados) devem ser criados via **Azure CLI** —
 ```bash
 az group create \
   --name rg-clyvovet \
-  --location brazilsouth
+  --location canadacentral
 ```
 
 ### 5.2 App Service Plan
