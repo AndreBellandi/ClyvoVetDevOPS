@@ -41,7 +41,7 @@ A **CLYVO VET** é uma aplicação para clínicas veterinárias que permite gere
 
 ## 3. Arquitetura da solução
 
-![](./imagem da arquitetura.png)
+![Arquitetura da Solução](./imagem_da_arquitetura.png)
 
 O diagrama acima resume o fluxo completo da solução, em cinco blocos:
 
