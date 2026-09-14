@@ -25,7 +25,7 @@ README com o **passo a passo (how-to)** para a entrega da disciplina **DevOps To
 
 ## 1. Descrição da solução
 
-A **CLYVO VET** é uma aplicação para clínicas veterinárias que permite gerenciar o cuidado contínuo do pet: cadastro de tutores e pets, histórico clínico, consultas e serviços. O backend é uma API **ASP.NET Core**, publicada em um **Azure App Service**, conectada a um banco de dados relacional **PaaS** na nuvem.
+A **CLYVO VET** é uma aplicação para clínicas veterinárias que permite gerenciar o cuidado contínuo do pet: cadastro de tutores e pets, histórico clínico, consultas e serviços. O backend é uma API **ASP.NET Core**, publicada em um **Azure App Service**, conectada a um banco de dados relacional **PaaS/Oracle** na nuvem.
 
 ## 2. Benefícios para o negócio
 
@@ -37,28 +37,28 @@ A **CLYVO VET** é uma aplicação para clínicas veterinárias que permite gere
 
 **Base para integração.** Sendo REST com contrato OpenAPI, o mesmo backend atende aplicativo do tutor, sistema da clínica e futuros parceiros sem reescrita.
 
-**Operação observável.** Health checks, log estruturado com correlação e métricas de latência e erro permitem detectar degradação antes que o usuário reclame, requisito para operar em nuvem com SLA.
+**Operação observável.** Health checks, log estruturado com correlação (Serilog) e tracing/métricas (OpenTelemetry) permitem detectar degradação antes que o usuário reclame, requisito para operar em nuvem com SLA.
 
 ## 3. Arquitetura da solução
 
-```
-┌────────────┐        HTTPS        ┌──────────────────────────┐        SQL        ┌───────────────────────────┐
-│  Usuário   │ ─────────────────▶  │  Azure App Service         │ ────────────────▶ │  Banco PaaS (Azure SQL /    │
-│ (Tutor/Vet)│                     │  (clyvovet-api)             │                    │  PostgreSQL / MySQL / Oracle)│
-└────────────┘                     └──────────────────────────┘                    └───────────────────────────┘
-        ▲                                    │
-        │                                    ▼
-        │                          ┌──────────────────────────┐
-        └───────────────────────── │   App Service Plan          │
-             deploy via CLI/Git    │   (compute do App Service)  │
-                                    └──────────────────────────┘
-```
+![Arquitetura da Solução ClyvoVet — do código ao ambiente em produção no Azure](./imagem_da_arquitetura.png)
 
-- **Persona Desenvolvedor**: publica o código da API diretamente no App Service (sem build de imagem Docker).
-- **Persona Usuário final**: consome a API publicada, que se conecta ao banco PaaS.
-- **Fluxo**: `az webapp up` / deploy via zip → App Service inicia a aplicação → API conecta ao banco PaaS via connection string.
+O diagrama acima resume o fluxo completo da solução, em cinco blocos:
 
-> Desenhe este diagrama em uma ferramenta simples (draw.io, Excalidraw) — **não** use notação de Fluxo/TOGAF/UML, pois não será aceito.
+1. **Desenvolvimento Local** — código-fonte da API (`ClyvoVetApi`) versionado com Git e editado no VS Code.
+2. **CI/CD (GitHub Actions)** — repositório no GitHub aciona build, testes e deploy automaticamente.
+3. **Build e Empacotamento** — `dotnet publish` gera a pasta `publish`, que é compactada em `clyvovet-api.zip` (contendo o `startup.sh`).
+4. **Azure (Resource Group → App Service)** — os recursos `rg-clyvovet` e `clyvovet-api` (Linux, .NET 8) são criados via Azure CLI.
+5. **Runtime no App Service** — o `startup.sh` executa `dotnet ClyvoVetApi.dll`, que sobe a API e passa a responder via HTTP/HTTPS.
+
+Na parte inferior do diagrama, a **visão de arquitetura em produção** mostra o caminho de uma requisição: **Usuários → Internet → Azure App Service (clyvovet-api, Linux/.NET 8) → `ClyvoVetApi.dll`**, que integra:
+
+- **Autenticação (JWT)**
+- **Entity Framework Core** (persistência no **Oracle**, via Oracle Managed Data Access)
+- **OpenTelemetry** (logs e métricas / tracing distribuído)
+- **Serilog** (logs estruturados)
+
+com o **Oracle Database** (Oracle da FIAP) como banco de dados em nuvem, fora de qualquer container.
 
 ## 4. Pré-requisitos
 
@@ -104,6 +104,17 @@ az webapp create `
   --resource-group rg-clyvovet `
   --plan plan-clyvovet `
   --runtime "DOTNETCORE:8.0"
+```
+
+### 5.4 Always On (recomendado)
+
+Para evitar cold start e reduzir instabilidade no boot da aplicação:
+
+```powershell
+az webapp config set `
+  --name clyvovet-api `
+  --resource-group rg-clyvovet `
+  --always-on true
 ```
 
 ## 6. Banco de dados em nuvem (Oracle FIAP)
@@ -248,29 +259,57 @@ O `script_bd.sql` na raiz do repositório deve conter:
 - `INSERT INTO` com pelo menos 2 linhas de conteúdo significativo por tabela usada no CRUD.
 - Nada de tabelas genéricas de apoio (cidade, estado, usuário/acesso) como base da avaliação.
 
-> Se o script tiver blocos PL/SQL (procedures, triggers) terminados com `/`, o split por `;` não funciona bem para eles — separe-os em outro arquivo `.sql` e execute cada bloco completo com um `cursor.execute()` próprio, sem incluir a barra `/` (ela é apenas um marcador de fim de bloco usado por clientes como SQL*Plus, e o `oracledb` não a reconhece como parte do comando).
-
 ## 7. Deploy da aplicação no App Service
 
 ### 7.1 Configurar a connection string (variável protegida)
+
+Monte a connection string numa variável primeiro — assim fica fácil trocar só os campos entre `<...>` na hora de rodar, sem mexer no comando do `az`. **Atenção:** substitua os placeholders pelos valores reais (não deixe `<SEU_RM>`, `<SUA_SENHA>` etc. literais na connection string — isso faz o app tentar conectar num host inexistente e travar no boot):
+
+```powershell
+$connectionString = "User Id=$env:RM_FIAP;Password=$env:SENHA_FIAP;Data Source=$env:HOST_FIAP:$env:PORTA_FIAP/$env:SERVICO_FIAP"
+
+az webapp config appsettings set `
+  --name clyvovet-api `
+  --resource-group rg-clyvovet `
+  --settings ConnectionStrings__Default=$connectionString
+```
+
+### 7.2 Configurar porta e URLs do Kestrel
+
+O App Service Linux espera que o container responda HTTP na porta 8080. Configure explicitamente:
 
 ```powershell
 az webapp config appsettings set `
   --name clyvovet-api `
   --resource-group rg-clyvovet `
-  --settings ConnectionStrings__Default="<CONNECTION_STRING_SEGURA>"
+  --settings WEBSITES_PORT=8080 ASPNETCORE_URLS=http://+:8080
 ```
 
-> Nunca deixe usuário/senha/token no `appsettings.json` versionado — sempre via `az webapp config appsettings` ou Azure Key Vault.
+### 7.3 Publish e deploy via zip
 
-### 7.2 Publish e deploy via zip
-
-O comando `zip` do Linux não existe nativamente no PowerShell — o equivalente é o cmdlet `Compress-Archive`:
+O comando `zip` do Linux não existe nativamente no PowerShell. Evite usar `Compress-Archive`: ele grava os caminhos internos do zip com `\` (barra invertida), o que quebra a extração no Linux (erros de `rsync: failed to stat ...`). Use o `tar` (compatível com o formato zip e com caminhos `/`):
 
 ```powershell
 dotnet publish -c Release -o ./publish
 
-Compress-Archive -Path ./publish/* -DestinationPath ./clyvovet-api.zip -Force
+# Gera o startup.sh dentro da pasta publish
+@'
+#!/bin/sh
+exec dotnet ./ClyvoVetApi.dll
+'@ | Set-Content -Path .\publish\startup.sh -Encoding ascii
+
+Remove-Item .\clyvovet-api.zip -Force -ErrorAction SilentlyContinue
+Set-Location .\publish
+tar -a -cf ..\clyvovet-api.zip *
+Set-Location ..
+
+# Confirma que não sobrou nenhum caminho com barra invertida dentro do zip
+tar -tf .\clyvovet-api.zip | Select-String "\\"
+
+az webapp config set `
+  --resource-group rg-clyvovet `
+  --name clyvovet-api `
+  --startup-file "sh startup.sh"
 
 az webapp deploy `
   --name clyvovet-api `
@@ -279,14 +318,14 @@ az webapp deploy `
   --type zip
 ```
 
-### 7.3 Validar o deploy
+### 7.4 Validar o deploy
 
 ```powershell
 az webapp show --name clyvovet-api --resource-group rg-clyvovet --query "defaultHostName" -o tsv
 az webapp log tail --name clyvovet-api --resource-group rg-clyvovet
 ```
 
-Acesse `https://clyvovet-api.azurewebsites.net` (ou `/swagger`) para validar que a API está de pé.
+Acesse `https://clyvovet-api.azurewebsites.net` (ou `/swagger`) para validar que a API está de pé. No log de startup, confirme que aparece o nome real da sua DLL (`ClyvoVetApi.dll`) subindo — e não `hostingstart.dll` (que indica que o Azure caiu na página padrão por não ter encontrado seu app).
 
 ## 8. CRUD e evidências de persistência
 
