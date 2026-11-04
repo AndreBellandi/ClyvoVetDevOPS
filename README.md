@@ -1,377 +1,356 @@
-# ClyvoVetDevOPS — Opção 2: Serviço de Aplicativo (App Service)
+# ClyvoVet — Cuidado Contínuo para seu Pet · Sprint 4 (CI/CD com Azure DevOps)
 
-README com o **passo a passo (how-to)** para a entrega da disciplina **DevOps Tools & Cloud Computing** usando a **Opção 2: Serviço de Aplicativo (App Service)** — API **.NET** publicada em Azure App Service, com banco de dados **também na nuvem**, porém **nada containerizado** (nem app, nem banco).
+Entrega da **Sprint 4** da disciplina **DevOps Tools & Cloud Computing** (FIAP, prof. Karlos). A API da ClyvoVet, integrada a um banco Oracle em nuvem, é compilada, testada e publicada **automaticamente** no **Azure App Service** por pipelines de **CI** e **CD** no **Azure DevOps**.
 
-> Repositório do projeto: [AndreBellandi/ClyvoVetDevOPS](https://github.com/AndreBellandi/ClyvoVetDevOPS)
-> Ajuste nomes de recursos, região, credenciais e caminhos conforme o ambiente real antes de executar os comandos.
-> Todos os comandos deste README estão escritos para **PowerShell** (Windows PowerShell 5.1+ ou PowerShell 7+, incluindo o Azure Cloud Shell no modo PowerShell).
-
----
+> **Opção de arquitetura:** Azure App Service (Web App Linux). **Nada é containerizado**: nem a aplicação, nem o banco.
 
 ## Índice
 
 1. [Descrição da solução](#1-descrição-da-solução)
 2. [Benefícios para o negócio](#2-benefícios-para-o-negócio)
-3. [Arquitetura da solução](#3-arquitetura-da-solução)
-4. [Pré-requisitos](#4-pré-requisitos)
-5. [Criação dos recursos via Azure CLI](#5-criação-dos-recursos-via-azure-cli)
-6. [Banco de dados em nuvem (Oracle FIAP)](#6-banco-de-dados-em-nuvem-oracle-fiap)
-7. [Deploy da aplicação no App Service](#7-deploy-da-aplicação-no-app-service)
-8. [CRUD e evidências de persistência](#8-crud-e-evidências-de-persistência)
-9. [Entrega (PDF e vídeo)](#9-entrega-pdf-e-vídeo)
-10. [Checklist final (penalidades a evitar)](#10-checklist-final-penalidades-a-evitar)
+3. [Stack de tecnologias](#3-stack-de-tecnologias)
+4. [Arquitetura utilizada](#4-arquitetura-utilizada)
+5. [Funcionamento do CI/CD](#5-funcionamento-do-cicd)
+6. [Variáveis necessárias](#6-variáveis-necessárias)
+7. [Procedimento de deploy](#7-procedimento-de-deploy)
+8. [CRUD e evidências no banco](#8-crud-e-evidências-no-banco)
+9. [Link da aplicação publicada](#9-link-da-aplicação-publicada)
+10. [Problemas comuns](#10-problemas-comuns)
+11. [Integrantes e entrega](#11-integrantes-e-entrega)
 
 ---
 
 ## 1. Descrição da solução
 
-A **CLYVO VET** é uma aplicação para clínicas veterinárias que permite gerenciar o cuidado contínuo do pet: cadastro de tutores e pets, histórico clínico, consultas e serviços. O backend é uma API **ASP.NET Core**, publicada em um **Azure App Service**, conectada a um banco de dados relacional **PaaS/Oracle** na nuvem.
+A **ClyvoVet** é uma aplicação para clínicas veterinárias que apoia o cuidado contínuo do pet: cadastro de tutores e pets, histórico clínico, consultas e vacinas. O backend é uma **API REST ASP.NET Core** (.NET 9) com autenticação JWT, persistência em **Oracle** (Entity Framework Core) e um serviço em segundo plano (`AlertScheduler`) que faz a varredura preventiva de vacinas.
+
+Nesta Sprint, o foco é a **automação da entrega**: qualquer alteração enviada à branch `main` do GitHub dispara o **CI** (build, testes e geração do artefato) e, na sequência, o **CD** (deploy automático no Azure Web App), sem passos manuais.
 
 ## 2. Benefícios para o negócio
 
-**Atendimento preventivo em vez de reativo.** O score de saúde e a varredura de vacinas pendentes permitem que a clínica identifique animais em risco antes da queixa clínica, transformando consulta de emergência em acompanhamento programado.
+- **Atendimento preventivo:** alertas de vacinas pendentes permitem agir antes da queixa clínica.
+- **Histórico unificado:** consultas, vacinas e medicações em um prontuário contínuo.
+- **Entrega rápida e segura:** cada correção ou melhoria chega à produção em minutos, com testes automáticos que evitam regressões.
+- **Menos erro humano:** build, testes e deploy padronizados e repetíveis.
+- **Operação observável:** logs estruturados (Serilog) e métricas/tracing (OpenTelemetry).
 
-**Histórico unificado.** Cada atendimento passa a compor um prontuário contínuo. O veterinário recebe consultas anteriores, vacinas aplicadas e medicações prescritas em uma requisição, sem depender da memória do tutor.
+## 3. Stack de tecnologias
 
-**Redução de faltas e de vacinas vencidas.** A rotina de alertas identifica vencimentos, viabilizando contato ativo com o tutor — receita recorrente que hoje se perde por esquecimento.
+| Camada | Tecnologia |
+|---|---|
+| Aplicação | C#, ASP.NET Core (.NET 9), Entity Framework Core (Oracle), JWT |
+| Testes | xUnit (`dotnet test`) |
+| Observabilidade | Serilog, OpenTelemetry |
+| Banco de dados | Oracle Database da FIAP (nuvem), acessado via Oracle Managed Data Access |
+| Repositório | GitHub |
+| CI/CD | Azure DevOps: Pipeline de CI (YAML) + Release de CD (Continuous deployment) |
+| Hospedagem | Azure App Service (Plano Linux B1) |
+| Infraestrutura como script | Azure CLI (Cloud Shell, `infra.sh`) |
 
-**Base para integração.** Sendo REST com contrato OpenAPI, o mesmo backend atende aplicativo do tutor, sistema da clínica e futuros parceiros sem reescrita.
+## 4. Arquitetura utilizada
 
-**Operação observável.** Health checks, log estruturado com correlação (Serilog) e tracing/métricas (OpenTelemetry) permitem detectar degradação antes que o usuário reclame, requisito para operar em nuvem com SLA.
+![Arquitetura da solução com CI/CD](imagem_da_arquitetura.png)
 
-## 3. Arquitetura da solução
+Fluxo numerado do diagrama:
 
-![Arquitetura da Solução](./imagem_da_arquitetura.png)
+| Nº | Etapa |
+|---|---|
+| 0 | O **Azure CLI** (Cloud Shell, `infra.sh`) cria o Resource Group, o App Service Plan e o Web App |
+| 1 | O desenvolvedor altera o código e faz commit e push na branch `main` |
+| 2 | O push na `main` inicia o **CI** automaticamente no Azure DevOps |
+| 3 | **Build** da aplicação (`dotnet restore` e `dotnet build`) |
+| 4 | **Testes automáticos** (`dotnet test`, xUnit) |
+| 5 | Geração e **publicação do artefato** `app` (`app.zip` com o `startup.sh`) |
+| 6 | O novo artefato **inicia o CD** automaticamente (Continuous deployment trigger) |
+| 7 | **Deploy** do artefato no Azure Web App (Zip Deploy, via *service connection*) |
+| 8 | O usuário final acessa a nova versão por HTTPS |
+| 9 | A API grava e lê no **Oracle** em nuvem (CRUD) |
 
-O diagrama acima resume o fluxo completo da solução, em cinco blocos:
-
-1. **Desenvolvimento Local** — código-fonte da API (`ClyvoVetApi`) versionado com Git e editado no VS Code.
-2. **CI/CD (GitHub Actions)** — repositório no GitHub aciona build, testes e deploy automaticamente.
-3. **Build e Empacotamento** — `dotnet publish` gera a pasta `publish`, que é compactada em `clyvovet-api.zip` (contendo o `startup.sh`).
-4. **Azure (Resource Group → App Service)** — os recursos `rg-clyvovet` e `clyvovet-api` (Linux, .NET 8) são criados via Azure CLI.
-5. **Runtime no App Service** — o `startup.sh` executa `dotnet ClyvoVetApi.dll`, que sobe a API e passa a responder via HTTP/HTTPS.
-
-Na parte inferior do diagrama, a **visão de arquitetura em produção** mostra o caminho de uma requisição: **Usuários → Internet → Azure App Service (clyvovet-api, Linux/.NET 8) → `ClyvoVetApi.dll`**, que integra:
-
-- **Autenticação (JWT)**
-- **Entity Framework Core** (persistência no **Oracle**, via Oracle Managed Data Access)
-- **OpenTelemetry** (logs e métricas / tracing distribuído)
-- **Serilog** (logs estruturados)
-
-com o **Oracle Database** (Oracle da FIAP) como banco de dados em nuvem, fora de qualquer container.
-
-## 4. Pré-requisitos
-
-- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) instalada e autenticada (`az login`)
-- .NET SDK instalado localmente para build/publish
-- Conta ativa no Azure (assinatura com permissão para criar recursos)
-- **Nenhum Docker é necessário nesta opção** — nada pode ser containerizado
-
-```powershell
-az login
-az account set --subscription "<NOME_OU_ID_DA_ASSINATURA>"
-```
-
-## 5. Criação dos recursos via Azure CLI
-
-Todos os recursos (App e Banco de Dados) devem ser criados via **Azure CLI** — não pelo Portal manualmente.
-
-> Nota sobre continuação de linha: no PowerShell, a continuação de um comando na linha seguinte usa o acento grave `` ` `` no final da linha (equivalente ao `\` do bash) — e não pode haver nenhum espaço depois dele, senão o comando quebra.
-
-### 5.1 Resource Group
-
-```powershell
-az group create `
-  --name rg-clyvovet `
-  --location canadacentral
-```
-
-### 5.2 App Service Plan
-
-```powershell
-az appservice plan create `
-  --name plan-clyvovet `
-  --resource-group rg-clyvovet `
-  --sku B1 `
-  --is-linux
-```
-
-### 5.3 Web App (App Service)
-
-```powershell
-az webapp create `
-  --name clyvovet-api `
-  --resource-group rg-clyvovet `
-  --plan plan-clyvovet `
-  --runtime "DOTNETCORE:8.0"
-```
-
-### 5.4 Always On (recomendado)
-
-Para evitar cold start e reduzir instabilidade no boot da aplicação:
-
-```powershell
-az webapp config set `
-  --name clyvovet-api `
-  --resource-group rg-clyvovet `
-  --always-on true
-```
-
-## 6. Banco de dados em nuvem (Oracle FIAP)
-
-Bancos aceitos nesta opção: **Azure SQL (PaaS)**, **MySQL**, **PostgreSQL**, ou **Oracle da FIAP**. Não é permitido H2 nem qualquer banco containerizado. Este README usa o **Oracle disponibilizado pela FIAP**, que já é um banco em nuvem gerenciado pela instituição — não é necessário provisionar um servidor Oracle próprio.
-
-### 6.1 Instalar o cliente Oracle (via Python, sem Instant Client/SQL*Plus)
-
-Em ambientes restritos (Azure Cloud Shell no modo PowerShell, containers restritos), instalar o SQL*Plus/Instant Client costuma esbarrar em falta de permissões de administrador. A alternativa que funciona sem depender de nada do sistema operacional é o driver **`python-oracledb` em modo thin** — 100% Python, sem cliente nativo Oracle.
-
-```powershell
-pip install oracledb --user
-```
-
-> No Windows, a flag `--break-system-packages` do pip é específica de distros Linux com Python "externally managed" (Debian/Ubuntu) e não existe/não é necessária aqui — por isso foi removida.
-
-O caminho mais estável para não depender de lembrar de reativar o ambiente virtual a cada sessão é criar um **venv com auto-ativação pelo perfil do PowerShell**:
-
-```powershell
-python -m venv "$HOME\venv-oracle"
-& "$HOME\venv-oracle\Scripts\Activate.ps1"
-pip install oracledb
-
-# Garante que existe um arquivo de perfil do PowerShell
-if (!(Test-Path -Path $PROFILE)) {
-    New-Item -ItemType File -Path $PROFILE -Force
-}
-
-# Adiciona a ativação automática do venv a todo novo terminal
-Add-Content -Path $PROFILE -Value '& "$HOME\venv-oracle\Scripts\Activate.ps1"'
-```
-
-> Se o PowerShell bloquear a execução do script de ativação com um erro de "execution policy", rode uma vez (como usuário atual, sem precisar de admin):
-> ```powershell
-> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-> ```
-
-A linha `Add-Content` garante que todo terminal novo já abre com o venv ativado (o prompt passa a mostrar `(venv-oracle)`). Confirme que está tudo certo:
-
-```powershell
-python -c "import oracledb; print(oracledb.__version__)"
-```
-
-> Alternativa sem linha de comando: use [DBeaver](https://dbeaver.io/) ou [Oracle SQL Developer](https://www.oracle.com/tools/downloads/sqldev-downloads.html), criando uma conexão Oracle com host/porta/serviço abaixo e as credenciais da sua RM.
-
-### 6.2 Obter as credenciais de acesso
-
-O Oracle da FIAP é acessado com o usuário e senha da sua RM, no seguinte endereço padrão:
+**Organização dos recursos no Azure**
 
 ```
-Host:    oracle.fiap.com.br
-Porta:   1521
-Serviço: ORCL
-Usuário: RM<seu RM>          # ex: RM564662
-Senha:   <sua senha do Oracle FIAP>
+Assinatura Azure
+└── Resource Group: rg-clyvovet
+    └── App Service Plan: plan-clyvovet (Linux, B1)
+        └── Web App: clyvovet-api (.NET 9)
+Nuvem FIAP
+└── Oracle Database (oracle.fiap.com.br:1521/ORCL)
 ```
 
-Defina como variáveis de ambiente para não repetir/trocar em cada comando (válidas apenas na sessão atual do PowerShell):
+## 5. Funcionamento do CI/CD
 
-```powershell
-$env:RM_FIAP      = "RM564662"
-$env:SENHA_FIAP   = "<sua_senha>"
-$env:HOST_FIAP    = "oracle.fiap.com.br"
-$env:PORTA_FIAP   = "1521"
-$env:SERVICO_FIAP = "ORCL"
+### 5.1 Projeto no Azure DevOps
+
+- **Nome:** `Sprint 4 – Azure DevOps` · **Visibilidade:** Private · **Controle de versão:** Git · **Processo:** Scrum
+- O professor (`pfkarlos.lima@fiap.com.br`) foi convidado com nível de acesso **Basic**.
+- O repositório do GitHub está conectado ao Azure DevOps (*Pipelines → New pipeline → GitHub (YAML)*).
+
+### 5.2 Pipeline de CI (`azure-pipelines.yml`)
+
+- Conectada ao repositório do GitHub.
+- **Inicia automaticamente** a cada push na branch `main`.
+- Executa **build**, **testes automáticos** e **publica o artefato** `app` no Azure DevOps.
+- Nenhuma senha ou string de conexão no YAML.
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  apiProject: 'ClyvoVetApi-main/ClyvoVetApi.csproj'
+  testProject: '**/*Tests.csproj'
+  artifactName: 'app'
+
+stages:
+  - stage: CI
+    displayName: 'CI - Build e Testes'
+    jobs:
+      - job: BuildTest
+        displayName: 'Compilar, testar e publicar'
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Instalar .NET 9'
+            inputs:
+              packageType: 'sdk'
+              version: '9.0.x'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Restaurar dependências'
+            inputs:
+              command: 'restore'
+              projects: '$(apiProject)'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build'
+            inputs:
+              command: 'build'
+              projects: '$(apiProject)'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Testes automáticos'
+            inputs:
+              command: 'test'
+              projects: '$(testProject)'
+              arguments: '--configuration $(buildConfiguration)'
+              testRunTitle: 'Testes ClyvoVet'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Publicar API'
+            inputs:
+              command: 'publish'
+              publishWebProjects: false
+              projects: '$(apiProject)'
+              arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish'
+              zipAfterPublish: false
+              modifyOutputPath: false
+
+          - script: |
+              printf '#!/bin/sh\nexec dotnet ./ClyvoVetApi.dll\n' > $(Build.ArtifactStagingDirectory)/publish/startup.sh
+            displayName: 'Gerar startup.sh'
+
+          - task: ArchiveFiles@2
+            displayName: 'Compactar aplicação'
+            inputs:
+              rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/publish'
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Build.ArtifactStagingDirectory)/$(artifactName).zip'
+              replaceExistingArchive: true
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publicar artefato'
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName).zip'
+              artifact: '$(artifactName)'
+              publishLocation: 'pipeline'
 ```
 
-> Se quiser que essas variáveis sobrevivam a novas sessões do terminal, use `[Environment]::SetEnvironmentVariable("RM_FIAP", "RM564662", "User")` para cada uma (persistem no perfil do usuário do Windows), ou adicione as linhas `$env:...` acima ao mesmo arquivo `$PROFILE` usado em 6.1.
+**Jobs e tasks do CI**
 
-> Não precisa criar Resource Group, servidor nem instância — o banco já existe e está disponível 24/7 pela instituição.
+| Task | Função |
+|---|---|
+| `UseDotNet@2` | Instala o SDK do .NET 9 no agente |
+| `DotNetCoreCLI` restore / build | Restaura pacotes e compila a API |
+| `DotNetCoreCLI` test | Executa os testes automáticos (xUnit) e publica o resultado |
+| `DotNetCoreCLI` publish | Gera os binários de produção |
+| `script` | Cria o `startup.sh` usado pelo Web App |
+| `ArchiveFiles@2` | Compacta tudo em `app.zip` (caminhos com `/`, compatível com Linux) |
+| `PublishPipelineArtifact@1` | Publica o artefato `app` no Azure DevOps |
 
-### 6.3 Testar a conexão
+### 5.3 Pipeline de CD (Release)
 
-O PowerShell não suporta heredocs no estilo `<<'EOF'` do bash. A forma equivalente é gravar o script Python num arquivo usando uma **here-string** (`@' ... '@`) e depois executá-lo — o here-string de aspas simples não expande variáveis do PowerShell, então o `$` dentro do código Python permanece literal, sem precisar escapar nada:
+- **Inicia automaticamente** quando um novo artefato do CI é criado (*Continuous deployment trigger* ligado no artefato).
+- **Obtém o artefato** `app` publicado pelo CI.
+- Faz o **deploy automático** no **Azure Web App** `clyvovet-api` (task *Azure App Service deploy*, Zip Deploy, agente `ubuntu-latest`).
+- Usa a **service connection** `MyAzureSubscription`. Nenhuma credencial fica no repositório.
 
-```powershell
-$script = @'
-import os, oracledb
+## 6. Variáveis necessárias
 
-conn = oracledb.connect(
-    user=os.environ["RM_FIAP"],
-    password=os.environ["SENHA_FIAP"],
-    dsn=f'{os.environ["HOST_FIAP"]}:{os.environ["PORTA_FIAP"]}/{os.environ["SERVICO_FIAP"]}',
-)
-print("Conectado com sucesso!")
-conn.close()
-'@
+Nenhum valor sensível fica no código ou no YAML. Os segredos ficam em **variáveis secretas (cadeado)** do Azure DevOps e são repassados ao Web App por **App Settings**.
 
-Set-Content -Path testar_conexao.py -Value $script
-python testar_conexao.py
+| Variável | Onde é definida | Secreta | Descrição |
+|---|---|---|---|
+| `ConnectionStrings__OracleConnection` | Variables da Release e App Settings do Web App | Sim | Connection string do Oracle (`User Id=<RM>;Password=<senha>;Data Source=oracle.fiap.com.br:1521/ORCL`) |
+| `Auth__SigningKey` | Variables da Release e App Settings | Sim | Chave de assinatura dos tokens JWT (32 ou mais caracteres) |
+| `ASPNETCORE_ENVIRONMENT` | Variables da Release e App Settings | Não | Ambiente da aplicação (`Development` habilita o Swagger) |
+| `WEBSITES_PORT` | App Settings (via `infra.sh`) | Não | `8080` |
+| `ASPNETCORE_URLS` | App Settings (via `infra.sh`) | Não | `http://+:8080` |
+
+Na task de deploy da Release, o campo **App settings** recebe:
+
+```
+-ConnectionStrings__OracleConnection "$(ConnectionStrings__OracleConnection)" -Auth__SigningKey "$(Auth__SigningKey)" -ASPNETCORE_ENVIRONMENT $(ASPNETCORE_ENVIRONMENT)
 ```
 
-### 6.4 Aplicar o script_bd.sql (DDL + inserts)
+## 7. Procedimento de deploy
 
-Se ainda não tiver o repositório no ambiente onde está rodando os comandos (ex.: Cloud Shell em modo PowerShell), clone-o primeiro — o `script_bd.sql` já vem dentro do projeto, não precisa recriar:
+### 7.1 Pré-requisitos
 
-```powershell
-Set-Location $HOME
+- Conta no GitHub, organização no Azure DevOps e assinatura Azure ativa.
+- Usuário e senha do Oracle FIAP.
+- No Azure DevOps: *Organization settings → Pipelines → Settings* com **Disable creation of classic release pipelines** em **Off**.
+
+### 7.2 Criar os recursos via Azure CLI
+
+No **Azure Cloud Shell (Bash)**, na raiz do repositório clonado:
+
+```bash
 git clone https://github.com/AndreBellandi/ClyvoVetDevOPS.git
-Set-Location "ClyvoVetDevOPS\ClyvoVetApi-main"
-
-Test-Path script_bd.sql   # deve retornar True, confirmando que o arquivo está presente
+cd ClyvoVetDevOPS
+chmod +x infra.sh
+./infra.sh
 ```
 
-Com o `script_bd.sql` acessível na pasta atual, grave e rode o script Python da mesma forma que em 6.3:
+Conteúdo do `infra.sh`:
 
-```powershell
-$script = @'
-import os, oracledb
+```bash
+#!/bin/bash
+RG=rg-clyvovet
+LOCATION=canadacentral
+PLAN=plan-clyvovet
+APP=clyvovet-api
+RUNTIME="DOTNETCORE:9.0"
 
-conn = oracledb.connect(
-    user=os.environ["RM_FIAP"],
-    password=os.environ["SENHA_FIAP"],
-    dsn=f'{os.environ["HOST_FIAP"]}:{os.environ["PORTA_FIAP"]}/{os.environ["SERVICO_FIAP"]}',
-)
-cursor = conn.cursor()
+az provider register --namespace Microsoft.Web
 
-with open("script_bd.sql", "r", encoding="utf-8") as f:
-    conteudo = f.read()
+# Grupo de recursos
+az group create --name $RG --location $LOCATION
 
-comandos = [c.strip() for c in conteudo.split(";") if c.strip()]
+# Plano do serviço (Linux)
+az appservice plan create --name $PLAN --resource-group $RG --sku B1 --is-linux
 
-for comando in comandos:
-    try:
-        cursor.execute(comando)
-        print("OK:", comando[:60].replace("\n", " "), "...")
-    except oracledb.DatabaseError as e:
-        print("ERRO em:", comando[:60].replace("\n", " "), "->", e)
+# Serviço de aplicativo (Web App)
+az webapp create --name $APP --resource-group $RG --plan $PLAN --runtime "$RUNTIME"
 
-conn.commit()
-cursor.close()
-conn.close()
-print("Script finalizado.")
-'@
-
-Set-Content -Path aplicar_script_bd.py -Value $script
-python aplicar_script_bd.py
-```
-
-O `script_bd.sql` na raiz do repositório deve conter:
-- `CREATE TABLE` de todas as tabelas do CORE da aplicação (ex.: `PET`, `CONSULTA`, `TUTOR`), com colunas, chaves primárias e comentários.
-- `INSERT INTO` com pelo menos 2 linhas de conteúdo significativo por tabela usada no CRUD.
-- Nada de tabelas genéricas de apoio (cidade, estado, usuário/acesso) como base da avaliação.
-
-## 7. Deploy da aplicação no App Service
-
-### 7.1 Configurar a connection string (variável protegida)
-
-Monte a connection string numa variável primeiro — assim fica fácil trocar só os campos entre `<...>` na hora de rodar, sem mexer no comando do `az`. **Atenção:** substitua os placeholders pelos valores reais (não deixe `<SEU_RM>`, `<SUA_SENHA>` etc. literais na connection string — isso faz o app tentar conectar num host inexistente e travar no boot):
-
-```powershell
-$connectionString = "User Id=$env:RM_FIAP;Password=$env:SENHA_FIAP;Data Source=$env:HOST_FIAP:$env:PORTA_FIAP/$env:SERVICO_FIAP"
-
-az webapp config appsettings set `
-  --name clyvovet-api `
-  --resource-group rg-clyvovet `
-  --settings ConnectionStrings__Default=$connectionString
-```
-
-### 7.2 Configurar porta e URLs do Kestrel
-
-O App Service Linux espera que o container responda HTTP na porta 8080. Configure explicitamente:
-
-```powershell
-az webapp config appsettings set `
-  --name clyvovet-api `
-  --resource-group rg-clyvovet `
+# Configurações do Web App
+az webapp config set --name $APP --resource-group $RG --always-on true --startup-file "sh startup.sh"
+az webapp config appsettings set --name $APP --resource-group $RG \
   --settings WEBSITES_PORT=8080 ASPNETCORE_URLS=http://+:8080
 ```
 
-### 7.3 Publish e deploy via zip
+> Se `DOTNETCORE:9.0` não existir na sua região, liste os runtimes com `az webapp list-runtimes --os-type linux` e use o nome exibido. Se o nome `clyvovet-api` estiver em uso, troque por `clyvovet-api-<seu RM>`.
 
-O comando `zip` do Linux não existe nativamente no PowerShell. Evite usar `Compress-Archive`: ele grava os caminhos internos do zip com `\` (barra invertida), o que quebra a extração no Linux (erros de `rsync: failed to stat ...`). Use o `tar` (compatível com o formato zip e com caminhos `/`):
+### 7.3 Banco de dados em nuvem (Oracle FIAP)
 
-```powershell
-dotnet publish -c Release -o ./publish
+O banco já existe e é fornecido pela FIAP. Aplique o `script_bd.sql` (DDL + inserts) uma vez, com um cliente como DBeaver ou SQL Developer:
 
-# Gera o startup.sh dentro da pasta publish
-@'
-#!/bin/sh
-exec dotnet ./ClyvoVetApi.dll
-'@ | Set-Content -Path .\publish\startup.sh -Encoding ascii
-
-Remove-Item .\clyvovet-api.zip -Force -ErrorAction SilentlyContinue
-Set-Location .\publish
-tar -a -cf ..\clyvovet-api.zip *
-Set-Location ..
-
-# Confirma que não sobrou nenhum caminho com barra invertida dentro do zip
-tar -tf .\clyvovet-api.zip | Select-String "\\"
-
-az webapp config set `
-  --resource-group rg-clyvovet `
-  --name clyvovet-api `
-  --startup-file "sh startup.sh"
-
-az webapp deploy `
-  --name clyvovet-api `
-  --resource-group rg-clyvovet `
-  --src-path clyvovet-api.zip `
-  --type zip
+```
+Host: oracle.fiap.com.br   Porta: 1521   Serviço: ORCL
+Usuário: <seu RM>          Senha: <sua senha do Oracle FIAP>
 ```
 
-### 7.4 Validar o deploy
+Ou pelo Cloud Shell, com o driver Python em modo *thin* (sem cliente nativo):
 
-```powershell
-az webapp show --name clyvovet-api --resource-group rg-clyvovet --query "defaultHostName" -o tsv
+```bash
+pip install oracledb --user
+export RM_FIAP="<seu RM>" SENHA_FIAP="<sua senha>"
+
+cd ClyvoVetApi-main
+python3 - <<'EOF'
+import os, oracledb
+conn = oracledb.connect(user=os.environ["RM_FIAP"], password=os.environ["SENHA_FIAP"],
+                        dsn="oracle.fiap.com.br:1521/ORCL")
+cur = conn.cursor()
+for cmd in [c.strip() for c in open("script_bd.sql", encoding="utf-8").read().split(";") if c.strip()]:
+    try:
+        cur.execute(cmd); print("OK:", cmd[:60].replace("\n", " "))
+    except oracledb.DatabaseError as e:
+        print("ERRO:", cmd[:60].replace("\n", " "), "->", e)
+conn.commit(); conn.close()
+EOF
+```
+
+> **Atenção:** confirme a senha no DBeaver **antes** de configurar o Web App. Tentativas repetidas com senha errada (o `AlertScheduler` tenta conectar em segundo plano) bloqueiam a conta Oracle (`ORA-28000`).
+
+### 7.4 Service connection
+
+*Project settings → Service connections → New service connection → Azure Resource Manager*:
+- Authentication: **Service principal (automatic)** · Scope: **Subscription**
+- Nome: `MyAzureSubscription` · **Grant access permission to all pipelines** marcado
+
+### 7.5 Criar a pipeline de CI
+
+1. *Pipelines → Create Pipeline → GitHub (YAML)* e autorize o Azure Pipelines no GitHub.
+2. Selecione o repositório `ClyvoVetDevOPS`.
+3. Use o `azure-pipelines.yml` da seção [5.2](#52-pipeline-de-ci-azure-pipelinesyml) (commit na `main`) e clique em **Save and run**.
+4. Confirme as etapas verdes, a aba **Tests** e o artefato `app` publicado.
+
+### 7.6 Criar a pipeline de CD (Release)
+
+1. *Pipelines → Releases → New pipeline → template Azure App Service deployment*. Stage `Produção`, pipeline `ClyvoVet - CD`.
+2. **Add an artifact:** Source type *Build*, projeto, source = pipeline de CI, versão *Latest*.
+3. No **raio** do artefato: ligue **Continuous deployment trigger**.
+4. No stage (*1 job, 1 task*):
+   - Subscription: `MyAzureSubscription` · App type: **Web App on Linux** · App service: `clyvovet-api`
+   - Agent pool: *Azure Pipelines*, `ubuntu-latest`
+   - Package: `$(System.DefaultWorkingDirectory)/**/*.zip` · método: **Zip Deploy**
+   - Startup command: `sh startup.sh`
+   - App settings: conforme a seção [6](#6-variáveis-necessárias)
+5. Na aba **Variables** da Release, crie `ConnectionStrings__OracleConnection` e `Auth__SigningKey` (**cadeado**) e `ASPNETCORE_ENVIRONMENT`.
+6. **Save → Create release** para o primeiro deploy.
+
+### 7.7 Validar o fluxo automático
+
+1. Faça uma alteração **real no código** da API (por exemplo, o título do Swagger) e faça commit e push na `main`.
+2. Confirme que o **CI inicia sozinho**, que o artefato é publicado e que o **CD inicia sozinho**.
+3. Acesse `https://clyvovet-api.azurewebsites.net/swagger` e confirme a alteração.
+4. Acompanhe o log do app, se necessário:
+
+```bash
 az webapp log tail --name clyvovet-api --resource-group rg-clyvovet
 ```
 
-Acesse `https://clyvovet-api.azurewebsites.net` (ou `/swagger`) para validar que a API está de pé. No log de startup, confirme que aparece o nome real da sua DLL (`ClyvoVetApi.dll`) subindo — e não `hostingstart.dll` (que indica que o Azure caiu na página padrão por não ter encontrado seu app).
+## 8. CRUD e evidências no banco
 
-## 8. CRUD e evidências de persistência
+O CRUD cobre tabelas relacionadas do **CORE** da aplicação. Cada operação é comprovada com `SELECT` direto no Oracle:
 
-O CRUD deve cobrir pelo menos **duas tabelas relacionadas entre si**, do CORE da aplicação (nada de cidade/estado/usuário genérico), com pelo menos 2 linhas significativas cada. Evidência sempre via `SELECT` direto no banco:
-
-| Operação | Endpoint (exemplo) | Evidência exigida |
+| Operação | Endpoint (exemplo) | Evidência |
 |---|---|---|
 | Create | `POST /api/pets` | `SELECT * FROM PET WHERE ID = ...` após o insert |
 | Read | `GET /api/pets/{id}` | Consulta retornando os dados persistidos |
 | Update | `PUT /api/pets/{id}` | `SELECT` mostrando o valor alterado |
 | Delete | `DELETE /api/pets/{id}` | `SELECT` mostrando a ausência do registro |
 
-## 9. Entrega (PDF e vídeo)
+## 9. Link da aplicação publicada
 
-**PDF de entrega deve conter apenas:**
-- Nome completo e RM de todos os integrantes
-- Link do repositório no GitHub
-- Link do vídeo no YouTube
-- Nada além disso — todo o resto (README, scripts) fica no GitHub.
+- **Aplicação (Azure Web App):** https://clyvovet-api.azurewebsites.net
+- **Swagger:** https://clyvovet-api.azurewebsites.net/swagger
 
-**Vídeo demonstrativo (mínimo 720p, áudio claro, explicação por voz, sem legendas):**
-1. Mostrar a criação dos recursos na Azure (App Service Plan, Web App, banco PaaS).
-2. Clone do repositório no GitHub → obrigatório começar assim os testes da solução.
-3. Deploy da aplicação seguindo exatamente os passos deste README.
-4. Criação, configuração e testes do App e do Banco de Dados na nuvem, seguindo o README.
-5. Demonstração individual de cada operação do CRUD **diretamente no banco por `SELECT`**: inserção, atualização, exclusão e consulta, evidenciando a integração total entre App e Banco.
-6. Sem cortes no vídeo durante a evidência do CRUD.
+## 10. Problemas comuns
 
-## 10. Checklist final (penalidades a evitar)
-
-- [ ] Nada rodando em `localhost` — tudo publicado na nuvem (senão: zero de nota)
-- [ ] Entrega dentro da data/horário definidos (senão: zero de nota)
-- [ ] Professor com acesso ao repositório e ao vídeo (senão: zero de nota)
-- [ ] Descrição da solução e do benefício para o negócio no README (-10 pontos cada, se ausente)
-- [ ] README com instruções de deploy/teste (How To) (-30 pontos se ausente)
-- [ ] Evidência clara de cada operação CRUD no banco (-30 pontos se ausente)
-- [ ] Vídeo com boa qualidade e explicação falada (-30 pontos se não)
-- [ ] Código-fonte publicado no GitHub (-40 pontos se ausente)
-- [ ] PDF com nome completo, RM e links (-30 pontos se ausente)
-- [ ] `script_bd.sql` com DDL incluído (-10 pontos se ausente)
-- [ ] Pelo menos 2 linhas significativas inseridas nas tabelas usadas (-20 pontos se não)
-- [ ] CRUD em pelo menos duas tabelas (-20 pontos se usar só uma)
-- [ ] Tabelas do CORE da solução, não genéricas (-30 pontos se não)
-- [ ] **Não misturar as opções de entrega** — nada pode estar containerizado nesta opção (-40 pontos se o App estiver containerizado, -40 pontos se o Banco estiver containerizado)
-- [ ] Sem dados sensíveis expostos no código-fonte (-20 pontos se houver)
-- [ ] Diagrama de arquitetura sem estilo Fluxo/TOGAF/UML (-20 pontos se usar)
-- [ ] Banco permitido (Azure SQL PaaS, MySQL, PostgreSQL, Oracle da FIAP — nunca H2) (-40 pontos se não)
-- [ ] Recursos (App e Banco) criados via Azure CLI (-30 pontos se não)
-- [ ] Scripts de recursos entregues no README (grupo de recurso, plano do serviço, serviço de aplicativo, banco de dados, configurações) (-10 pontos por script faltando)
+| Sintoma | Causa provável | Solução |
+|---|---|---|
+| `NETSDK1045` no restore | O projeto usa .NET 9 e o SDK instalado é 8 | `UseDotNet@2` com `9.0.x` |
+| App retorna página padrão (`hostingstart.dll`) | Runtime do Web App diferente do projeto, ou `startup.sh` fora do zip | Runtime `DOTNETCORE:9.0` e conferir o conteúdo do `app.zip` |
+| `ConnectionStrings:OracleConnection nao configurada` | Variável com nome diferente | Usar exatamente `ConnectionStrings__OracleConnection` |
+| `ORA-01017` | Usuário ou senha incorretos | Validar no DBeaver; usar aspas simples no Cloud Shell |
+| `ORA-28000` | Conta bloqueada por tentativas erradas | Parar o app e pedir o desbloqueio do usuário |
+| `/swagger` retorna 404 | Swagger habilitado só em `Development` | `ASPNETCORE_ENVIRONMENT=Development` |
