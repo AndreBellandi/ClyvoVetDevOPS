@@ -22,10 +22,10 @@ stages:
         displayName: 'Compilar, testar e publicar'
         steps:
           - task: UseDotNet@2
-            displayName: 'Instalar .NET 8'
+            displayName: 'Instalar .NET 9'
             inputs:
               packageType: 'sdk'
-              version: '8.0.x'
+              version: '9.0.x'
           - script: |
               find . -name "*.csproj" -o -name "*.sln"
             displayName: 'Listar projetos'
