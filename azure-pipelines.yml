@@ -26,7 +26,9 @@ stages:
             inputs:
               packageType: 'sdk'
               version: '8.0.x'
-
+          - script: |
+              find . -name "*.csproj" -o -name "*.sln"
+            displayName: 'Listar projetos'
           - task: DotNetCoreCLI@2
             displayName: 'Restaurar dependências'
             inputs:
