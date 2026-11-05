@@ -191,7 +191,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     ResponseWriter = HealthCheckResponseWriter.WriteAsync
 });
 
-app.MapGet("/wellcome", () => Results.Text("ClyvoVet — Cuidado Contínuo para seu Pet"));
+app.MapGet("/wellcome", () => Results.Text("ClyvoVet — Cuidado Contínuo para seu Pet 2"));
 
 if (signingKeyWasGenerated)
     app.Logger.LogWarning("Auth:SigningKey nao configurada. Uma chave temporaria foi gerada e os tokens serao invalidados ao reiniciar a aplicacao.");
